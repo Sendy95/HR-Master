@@ -11,8 +11,8 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $fillable = [
-        'employee_no',      // Username login
-        'password',         // Format ddmmyyyy (saat seeder)
+        'employee_no',
+        'password',
         'role',
         'is_active',
         'otp_code',
@@ -30,9 +30,13 @@ class User extends Authenticatable
         'is_active' => 'boolean',
     ];
 
-    // Relasi ke profil Employee untuk mengambil Nama, dll
+    /**
+     * Relasi ke profil Employee
+     * Masukkan fungsi ini di DALAM class
+     */
     public function employee()
     {
-        return $this->hasOne(Employee::class, 'user_id', 'id');
+        // Gunakan employee_no jika itu adalah kunci penyambungnya
+        return $this->hasOne(Employee::class, 'employee_no', 'employee_no');
     }
-}
+} 

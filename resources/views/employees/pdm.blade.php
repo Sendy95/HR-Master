@@ -106,34 +106,70 @@
                         </div>
                     </div>
 
+                    @php
+                        $phoneStatuses = ['WhatsApp & Telepon', 'WhatsApp', 'Telepon'];
+                    @endphp
+
                     <div class="row">
+                        {{-- NO TELEPON 1 --}}
                         <div class="col-md-3 mb-3">
                             <label class="label-req">NO TELEPON 1</label>
-                            <input type="text" name="phone_1" value="{{ $userData['phone_1'] ?? '' }}" onkeypress="return hanyaAngka(event)" oninput="cleanNonNumber(this)" class="form-control" placeholder="08..." maxlength="14" required>
+                            <input type="text"
+                                name="phone_1"
+                                value="{{ $userData['phone_1'] ?? '' }}"
+                                onkeypress="return hanyaAngka(event)"
+                                oninput="cleanNonNumber(this)"
+                                class="form-control"
+                                placeholder="08..."
+                                maxlength="14"
+                                required>
                         </div>
+
+                        {{-- STATUS NO TELP 1 --}}
                         <div class="col-md-3 mb-3">
                             <label class="label-req">STATUS NO TELP 1</label>
                             <select name="phone_1_status" class="form-select" required>
-                                <option value="" disabled {{ empty($userData['phone_1_status']) ? 'selected' : '' }}>- Pilih -</option>
-                                <option value="WhatsApp & Telepon" {{ ($userData['phone_1_status'] ?? '') == 'WhatsApp & Telepon' ? 'selected' : '' }}>WhatsApp & Telepon</option>
-                                <option value="WhatsApp" {{ ($userData['phone_1_status'] ?? '') == 'WhatsApp' ? 'selected' : '' }}>WhatsApp</option>
-                                <option value="Telepon" {{ ($userData['phone_1_status'] ?? '') == 'Telepon' ? 'selected' : '' }}>Telepon</option>
+                                <option value="" disabled {{ empty($userData['phone_1_status']) ? 'selected' : '' }}>
+                                    - Pilih -
+                                </option>
+                                @foreach($phoneStatuses as $status)
+                                    <option value="{{ $status }}"
+                                        {{ ($userData['phone_1_status'] ?? '') === $status ? 'selected' : '' }}>
+                                        {{ $status }}
+                                    </option>
+                                @endforeach
                             </select>
                         </div>
+
+                        {{-- NO TELEPON 2 --}}
                         <div class="col-md-3 mb-3">
                             <label>NO TELEPON 2</label>
-                            <input type="text" name="phone_2" value="{{ $userData['phone_2'] ?? '' }}" onkeypress="return hanyaAngka(event)" oninput="cleanNonNumber(this)" class="form-control" placeholder="08..." maxlength="14">
+                            <input type="text"
+                                name="phone_2"
+                                value="{{ $userData['phone_2'] ?? '' }}"
+                                onkeypress="return hanyaAngka(event)"
+                                oninput="cleanNonNumber(this)"
+                                class="form-control"
+                                placeholder="08..."
+                                maxlength="14">
                         </div>
+
+                        {{-- STATUS NO TELP 2 --}}
                         <div class="col-md-3 mb-3">
                             <label>STATUS NO TELP 2</label>
                             <select name="phone_2_status" class="form-select">
-                                <option value="" disabled {{ empty($userData['phone_2_status']) ? 'selected' : '' }}>- Pilih -</option>
-                                <option value="WhatsApp & Telepon" {{ ($userData['phone_2_status'] ?? '') == 'WhatsApp & Telepon' ? 'selected' : '' }}>WhatsApp & Telepon</option>
-                                <option value="WhatsApp" {{ ($userData['phone_2_status'] ?? '') == 'WhatsApp' ? 'selected' : '' }}>WhatsApp</option>
-                                <option value="Telepon" {{ ($userData['phone_2_status'] ?? '') == 'Telepon' ? 'selected' : '' }}>Telepon</option>
+                                <option value="" disabled {{ empty($userData['phone_2_status']) ? 'selected' : '' }}>
+                                    - Pilih -
+                                </option>
+                                @foreach($phoneStatuses as $status)
+                                    <option value="{{ $status }}"
+                                        {{ ($userData['phone_2_status'] ?? '') === $status ? 'selected' : '' }}>
+                                        {{ $status }}
+                                    </option>
+                                @endforeach
                             </select>
                         </div>
-                    </div>  
+                    </div>
 
                     <div class="row">
                         <div class="col-md-4">
@@ -245,6 +281,7 @@
                             <div class="col-md-6 mb-3">
                                 <label>STATUS PAJAK (PTKP)</label>
                                 <input type="text" id="ptkp_status" name="ptkp_status" class="form-control ptkp-badge" readonly value="{{ $userData['ptkp_status'] ?? '-' }}">
+                                <input type="hidden" name="family_status" id="family_status">
                             </div>
                         </div>
 
@@ -340,7 +377,7 @@ function logoutKaryawan() {
     }).then((result) => {
         if (result.isConfirmed) {
             sessionStorage.clear();
-            location.reload();
+            window.location.href = "{{ route('logout') }}";
         }
     });
 }
@@ -428,7 +465,7 @@ function fillFormWithData(data) {
 
     console.log("Memulai pengisian form dengan data:", data);
 
-    // 1. MAPPING DATA TEKS & DROPDOWN
+    // 1. MAPPING DATA TEKS, DROPDOWN, & TANGGAL
     const mapping = {
         'company_name': data.company_name,
         'status': data.status, 
@@ -453,10 +490,11 @@ function fillFormWithData(data) {
         'marital_status': data.marital_status,
         'ptkp_status': data.ptkp_status,
         'family_status': data.family_status,
-        // Mapping tambahan untuk keluarga
+        'identity_expiry': data.identity_expiry,
+        // Mapping Keluarga (Sesuai kolom database)
         'spouse_name': data.spouse_name,
         'spouse_relation': data.spouse_relation,
-        'tanggal_Lahir_pasangan': data.spouse_dob,
+        'spouse_dob': data.spouse_dob,
         'child_count': data.child_count || 0
     };
 
@@ -464,9 +502,16 @@ function fillFormWithData(data) {
     Object.keys(mapping).forEach(fieldName => {
         let el = document.getElementsByName(fieldName)[0] || document.getElementById(fieldName);
         if (el) {
-            const value = mapping[fieldName] || "";
+            let value = mapping[fieldName] || "";
+            
+            // LOGIKA TANGGAL: Input type="date" hanya menerima format YYYY-MM-DD
             if (el.type === 'date') {
-                if (value && value.includes('-')) el.value = value;
+                if (value && value !== "" && value !== "0000-00-00") {
+                    // Ambil 10 karakter pertama (YYYY-MM-DD) untuk membuang jam jika ada
+                    el.value = value.substring(0, 10);
+                } else {
+                    el.value = "";
+                }
             } else {
                 el.value = value;
             }
@@ -639,10 +684,14 @@ function openFileInNewTab(type) {
 document.getElementById('pdmForm')?.addEventListener('submit', async function(e) {
     e.preventDefault();
     
-    // 1. Validasi
+    // 1. Validasi Pernyataan
     const checkPernyataan = document.getElementById('pernyataan_benar');
     if (checkPernyataan && !checkPernyataan.checked) {
-        Swal.fire('Peringatan', 'Silakan centang kotak pernyataan kebenaran data.', 'warning');
+        Swal.fire({
+            icon: 'warning',
+            title: 'Peringatan',
+            text: 'Silakan centang kotak pernyataan kebenaran data.'
+        });
         return;
     }
 
@@ -650,7 +699,7 @@ document.getElementById('pdmForm')?.addEventListener('submit', async function(e)
     const originalContent = btn.innerHTML;
     const cbForever = document.getElementById('identity_expiry_forever');
 
-    // 2. Loading State
+    // 2. Loading State pada Tombol
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
 
@@ -661,7 +710,7 @@ document.getElementById('pdmForm')?.addEventListener('submit', async function(e)
     }
 
     try {
-        const response = await fetch("{{ route('pdm.update') }}", {
+        const response = await fetch("{{ route('pdm.index') }}", {
             method: 'POST',
             headers: { 
                 'X-CSRF-TOKEN': CSRF_TOKEN,
@@ -674,19 +723,42 @@ document.getElementById('pdmForm')?.addEventListener('submit', async function(e)
         const res = await response.json();
 
         if (response.ok && res.success) {
-            await Swal.fire({ icon: 'success', title: 'Berhasil!', text: res.message, timer: 2000 });
-            // Sinkronisasi ulang data agar UI (seperti preview file) terupdate
-            loadUserData(formData.get('employee_no'));
+            // FITUR FREEZE: Menampilkan loading yang tidak bisa ditutup (Modal Blocking)
+            Swal.fire({
+                title: 'Berhasil Disimpan!',
+                text: 'Mohon tunggu, sedang menyinkronkan data...',
+                icon: 'success',
+                allowOutsideClick: false, // Freeze: user tidak bisa klik di luar
+                allowEscapeKey: false,    // Freeze: user tidak bisa tekan Esc
+                showConfirmButton: false, // Freeze: tidak ada tombol untuk diklik
+                didOpen: () => {
+                    Swal.showLoading(); // Menampilkan spinner loading
+                }
+            });
+
+            // Beri jeda 1.5 detik agar user sempat membaca, lalu refresh
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+
         } else {
+            // Jika Gagal: Kembalikan kontrol ke user
             let errorMsg = res.message || 'Gagal menyimpan data.';
             if (res.errors) errorMsg = Object.values(res.errors).flat().join('<br>');
-            Swal.fire({ icon: 'error', title: 'Gagal', html: errorMsg });
+            
+            Swal.fire({ 
+                icon: 'error', 
+                title: 'Gagal', 
+                html: errorMsg 
+            });
+            
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
         }
+
     } catch (err) {
         console.error("Submit Error:", err);
-        Swal.fire('Error', 'Terjadi kesalahan koneksi ke server.', 'error');
-    } finally {
-        // Balikkan tombol ke kondisi semula (Pengganti resetButton)
+        Swal.fire('Error', 'Terjadi kesalahan koneksi.', 'error');
         btn.disabled = false;
         btn.innerHTML = originalContent;
     }
