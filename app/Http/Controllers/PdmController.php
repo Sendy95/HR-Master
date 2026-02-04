@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\{Employee, User};
-use Illuminate\Support\Facades\{Auth, DB, Schema};
+use Illuminate\Support\Facades\{Auth, DB, Schema, Http};
 use Carbon\Carbon;
 
 class PdmController extends Controller
@@ -22,17 +22,14 @@ class PdmController extends Controller
 
         if (!$employee) return back()->withErrors(['msg' => 'Karyawan tidak ditemukan!']);
 
-        // Password default adalah ddmmyyyy dari tanggal lahir
         $dobRaw = $employee->getRawOriginal('dob');
         $defaultPass = $dobRaw ? Carbon::parse($dobRaw)->format('dmY') : null;
         $inputPassMd5 = md5($request->password);
 
-        // Cek password (mendukung plain text ddmmyyyy atau md5 lama)
         if ($request->password !== $defaultPass && $inputPassMd5 !== $employee->password) {
             return back()->withErrors(['msg' => 'Password salah!']);
         }
 
-        // Sinkronisasi ke tabel Users untuk session Auth Laravel
         $user = User::firstOrCreate(
             ['employee_no' => $employee->employee_no],
             [
@@ -56,127 +53,154 @@ class PdmController extends Controller
     // --- 2. USER SIDE: VIEW FORM ---
     public function edit()
     {
-        // Mengambil data melalui relasi yang sudah kita buat di model User
         $user = Auth::user();
         $master = Employee::where('employee_no', $user->employee_no)->firstOrFail();
         
-        // Ambil riwayat perubahan yang masih 'Pending'
         $pendingLogs = DB::table('employee_update_logs')
                         ->where('employee_no', $user->employee_no)
                         ->where('approval_status', 'Pending')
                         ->get();
 
-        $userData = $master->toArray();
+        $userData = $master->getAttributes();
 
-        // Overwrite data master dengan data pending agar muncul di form
         foreach ($pendingLogs as $log) {
             $userData[$log->field_name] = $log->new_value;
         }
 
-        // Format tanggal agar sesuai dengan input type="date"
-        $dateFields = ['dob', 'spouse_dob', 'child_1_dob', 'child_2_dob', 'child_3_dob', 
-                       'kitas_issued_date', 'kitas_end_date', 'imta_issued_date', 'imta_end_date'];
+        // Logika sinkronisasi data anak
+        $maxChildFound = 0;
+        for ($i = 1; $i <= 3; $i++) {
+            if (!empty($userData["child_{$i}_name"])) {
+                $maxChildFound = $i;
+            }
+        }
+        if ($maxChildFound > ($userData['child_count'] ?? 0)) {
+            $userData['child_count'] = $maxChildFound;
+        }
+        $userData['has_children'] = (($userData['child_count'] ?? 0) > 0);
+
+        // Format tanggal
+        $dateFields = ['dob', 'spouse_dob', 'child_1_dob', 'child_2_dob', 'child_3_dob', 'identity_expiry'];
         foreach ($dateFields as $df) {
-            if (!empty($userData[$df])) {
-                $userData[$df] = Carbon::parse($userData[$df])->format('Y-m-d');
+            if (isset($userData[$df]) && !empty($userData[$df]) && $userData[$df] !== 'Seumur Hidup') {
+                try {
+                    $userData[$df] = \Carbon\Carbon::parse($userData[$df])->format('Y-m-d');
+                } catch (\Exception $e) {}
             }
         }
 
         $isPending = $pendingLogs->isNotEmpty();
-        return view('employees.pdm', compact('userData', 'isPending', 'master'));
+        $logDataJson = json_encode($userData);
+        
+        return view('employees.pdm', compact('userData', 'isPending', 'master', 'logDataJson'));
     }
 
-    // --- 3. USER SIDE: SUBMIT CHANGES ---
+    // --- 3. USER SIDE: SUBMIT CHANGES (INCLUDING GOOGLE DRIVE) ---
     public function update(Request $request)
     {
         try {
             DB::beginTransaction();
             
-            // 1. Ambil user yang login & validasi data employee
             $user = Auth::user();
             $employee = Employee::where('employee_no', $user->employee_no)->first();
             
             if (!$employee) {
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'Profil dengan nomor ' . $user->employee_no . ' tidak ditemukan di database master.'
-                ]);
+                return response()->json(['success' => false, 'message' => 'Profil tidak ditemukan.']);
             }
 
             $employee_no = $employee->employee_no;
+            $employee_name = $employee->employee_name;
             $changes = [];
 
-            // 2. LOGIKA DATA TEKS: Filter input (kecuali token & file)
-            $fields = $request->except(['_token', 'fKtp', 'fIjazah', 'fBank', 'fNpwp', 'fKk', 'pernyataan_benar']);
+            // 1. Filter input text biasa
+            $excludedFields = [
+                '_token', 'fKtp', 'fIjazah', 'fBank', 'fNpwp', 'fKk', 
+                'pernyataan_benar', 'identity_expiry_forever', 'has_children'
+            ];
+            $fields = $request->except($excludedFields);
+
+            if ($request->identity_expiry_forever === 'on' || $request->has('identity_expiry_forever')) {
+                $fields['identity_expiry'] = 'Seumur Hidup';
+            }
 
             foreach ($fields as $fieldName => $newValue) {
                 if (!Schema::hasColumn('employees', $fieldName)) continue;
 
-                // Ambil nilai mentah dari database (RawOriginal) untuk perbandingan akurat
                 $oldValue = $employee->getRawOriginal($fieldName);
-                
                 $newStr = trim((string)($newValue ?? ''));
                 $oldStr = trim((string)($oldValue ?? ''));
 
+                $dateFields = ['dob', 'spouse_dob', 'child_1_dob', 'child_2_dob', 'child_3_dob', 'identity_expiry'];
+                if (in_array($fieldName, $dateFields) && $newStr !== 'Seumur Hidup' && $newStr !== '') {
+                    $newStr = date('Y-m-d', strtotime($newStr));
+                    $oldStr = $oldStr ? date('Y-m-d', strtotime($oldStr)) : '';
+                }
+
                 if ($newStr !== $oldStr) {
-                    $changes[$fieldName] = [
-                        'old' => $oldStr,
-                        'new' => $newStr
-                    ];
+                    $changes[$fieldName] = ['old' => $oldStr, 'new' => $newStr];
                 }
             }
 
-            // 3. LOGIKA FILE UPLOAD: Deteksi file yang diunggah
-            $fileFields = [
-                'fKtp' => 'ktp', 
-                'fIjazah' => 'ijazah', 
-                'fBank' => 'bank', 
-                'fNpwp' => 'npwp', 
-                'fKk' => 'kk'
-            ];
+            // 2. LOGIKA UPLOAD KE GOOGLE DRIVE
+            $gasUrl = "https://script.google.com/macros/s/AKfycbzOgw5Z5b3Imdxp8p1Y_yn0czeOchCF4ngo8MytYSGAyangWAKQa2Q9ugNsImzw6aFC/exec";
             
-            foreach ($fileFields as $inputName => $dbColumn) {
+            $googlePayload = [
+                'noKaryawan' => $employee_no,
+                'namaKaryawan' => $employee_name,
+                'fileIjazah' => null, 'fileBank' => null, 'fileNpwp' => null, 'fileKtp' => null, 'fileKk' => null
+            ];
+
+            $fileMapping = [
+                'fIjazah' => ['key' => 'fileIjazah', 'col' => 'education_certificate_url'],
+                'fBank'   => ['key' => 'fileBank',   'col' => 'bank_book_url'],
+                'fNpwp'   => ['key' => 'fileNpwp',   'col' => 'npwp_url'],
+                'fKtp'    => ['key' => 'fKtp',       'col' => 'identity_url'],
+                'fKk'     => ['key' => 'fileKk',     'col' => 'family_card_url'],
+            ];
+
+            $hasFiles = false;
+            foreach ($fileMapping as $inputName => $map) {
                 if ($request->hasFile($inputName)) {
                     $file = $request->file($inputName);
-                    $newFileName = $file->getClientOriginalName();
-                    
-                    // Ambil info file lama (jika ada di DB)
-                    $oldFile = $employee->getRawOriginal($dbColumn) ?? 'Tidak ada file sebelumnya';
-
-                    $changes[$dbColumn] = [
-                        'old' => $oldFile,
-                        'new' => '[UPLOAD BARU]: ' . $newFileName
-                    ];
+                    $googlePayload[$map['key']] = 'data:' . $file->getMimeType() . ';base64,' . base64_encode(file_get_contents($file));
+                    $hasFiles = true;
                 }
             }
 
-            // 4. Validasi: Jika tidak ada perubahan sama sekali (teks maupun file)
-            if (empty($changes)) {
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'Tidak ada perubahan data yang dideteksi. Data Anda masih sama dengan data di server.'
-                ]);
+            if ($hasFiles) {
+                $response = Http::timeout(60)->post($gasUrl, $googlePayload);
+                if ($response->successful() && $response->json('success')) {
+                    $urls = $response->json('data');
+                    if (!empty($urls['urlIjazah'])) $changes['education_certificate_url'] = ['old' => $employee->education_certificate_url, 'new' => $urls['urlIjazah']];
+                    if (!empty($urls['urlBank']))   $changes['bank_book_url'] = ['old' => $employee->bank_book_url, 'new' => $urls['urlBank']];
+                    if (!empty($urls['urlNpwp']))   $changes['npwp_url'] = ['old' => $employee->npwp_url, 'new' => $urls['urlNpwp']];
+                    if (!empty($urls['urlKtp']))    $changes['identity_url'] = ['old' => $employee->identity_url, 'new' => $urls['urlKtp']];
+                    if (!empty($urls['urlKk']))     $changes['family_card_url'] = ['old' => $employee->family_card_url, 'new' => $urls['urlKk']];
+                } else {
+                    throw new \Exception("Gagal upload berkas ke Drive: " . ($response->json('message') ?? 'Unknown Error'));
+                }
             }
 
-            // 5. A. Simpan Header Request
+            if (empty($changes)) {
+                return response()->json(['success' => false, 'message' => 'Tidak ada perubahan data.']);
+            }
+
             $requestId = DB::table('employee_update_requests')->insertGetId([
                 'employee_no' => $employee_no,
                 'approval_status' => 'Pending',
                 'requested_by' => $employee_no,
                 'request_ip' => $request->ip(),
                 'request_source' => 'Employee',
-                'created_at' => now(),
-                'updated_at' => now()
+                'created_at' => now(), 'updated_at' => now()
             ]);
 
-            // 6. B. Simpan Detail Log Per Kolom (Looping hasil $changes)
             foreach ($changes as $field => $val) {
                 DB::table('employee_update_logs')->insert([
                     'employee_no' => $employee_no,
                     'update_id' => $requestId,
                     'field_name' => $field,
-                    'old_value' => $val['old'],
-                    'new_value' => $val['new'],
+                    'old_value' => $val['old'] ?? '',
+                    'new_value' => $val['new'] ?? '',
                     'action' => 'Submit',
                     'approval_status' => 'Pending',
                     'acted_by' => $employee_no,
@@ -187,17 +211,11 @@ class PdmController extends Controller
             }
 
             DB::commit();
-            return response()->json([
-                'success' => true, 
-                'message' => 'Perubahan data dan berkas Anda telah diajukan ke HR untuk disetujui.'
-            ]);
+            return response()->json(['success' => true, 'message' => 'Data dan berkas berhasil diajukan!']);
             
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'success' => false, 
-                'message' => 'Sistem Error: ' . $e->getMessage()
-            ], 500);
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
     }
 
@@ -219,8 +237,6 @@ class PdmController extends Controller
             DB::beginTransaction();
 
             $header = DB::table('employee_update_requests')->where('id', $id)->first();
-            if (!$header) return back()->with('error', 'Data pengajuan tidak ditemukan.');
-
             $logs = DB::table('employee_update_logs')->where('update_id', $id)->get();
             $dataToUpdate = [];
 
@@ -228,45 +244,30 @@ class PdmController extends Controller
                 $dataToUpdate[$log->field_name] = $log->new_value;
             }
 
-            // Eksekusi update ke tabel utama
             Employee::where('employee_no', $header->employee_no)->update($dataToUpdate);
 
-            // Update status pengajuan
             DB::table('employee_update_requests')->where('id', $id)->update([
                 'approval_status' => 'Approved',
                 'approved_by' => Auth::user()->employee_no,
                 'approved_at' => now()
             ]);
 
-            DB::table('employee_update_logs')->where('update_id', $id)->update([
-                'approval_status' => 'Approved',
-                'action' => 'Approve',
-                'acted_by' => Auth::user()->employee_no,
-                'acted_role' => 'hr_admin'
-            ]);
+            DB::table('employee_update_logs')->where('update_id', $id)->update(['approval_status' => 'Approved']);
 
             DB::commit();
-            return back()->with('success', 'Perubahan data telah disetujui dan diperbarui.');
+            return back()->with('success', 'Data diperbarui.');
             
         } catch (\Exception $e) {
             DB::rollBack();
-            return back()->with('error', 'Gagal memproses: ' . $e->getMessage());
+            return back()->with('error', $e->getMessage());
         }
     }
 
     public function getData($employee_no)
     {
         $employee = Employee::where('employee_no', $employee_no)->first();
-        
-        if ($employee) {
-            // Laravel akan otomatis menggunakan format Y-m-d saat array-kan model 
-            // karena $casts 'date' di model Employee.
-            return response()->json([
-                'success' => true,
-                'userData' => $employee->toArray() 
-            ]);
-        }
-        
-        return response()->json(['success' => false, 'message' => 'Not found'], 404);
+        return $employee 
+            ? response()->json(['success' => true, 'userData' => $employee->toArray()])
+            : response()->json(['success' => false], 404);
     }
 }

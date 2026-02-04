@@ -11,6 +11,29 @@
     <link rel="stylesheet" href="{{ asset('css/pdm-style.css') }}">
     <style>
         #loginSection { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .view-container {
+            margin-top: 10px;
+            display: flex;
+            justify-content: center; /* Membuat tombol ke tengah */
+            align-items: center;
+        }
+
+        .btn-view-center {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 20px; /* Membuat lonjong seperti di foto */
+            padding: 5px 15px;
+            font-size: 12px;
+            color: #333;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+        }
+
+        .btn-view-center:hover {
+            background-color: #e9ecef;
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
@@ -35,11 +58,13 @@
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="label-req">PERUSAHAAN</label>
-                            <input type="text" name="company_name" class="form-control" value="{{ $userData['company_name'] }}" required readonly>
+                            <input type="text" name="company_name" class="form-control bg-light" value="{{ $userData['company_name'] }}" required readonly>
                         </div>
                         <div class="col-md-6">
                             <label class="label-req">STATUS KARYAWAN</label>
-                            <select name="status" id="empStatus" class="form-select" onchange="toggleExpatLogic()" required>
+                            <select name="status" id="empStatus" class="form-select bg-light" 
+                                    style="pointer-events: none; touch-action: none;" 
+                                    onchange="toggleExpatLogic()" tabindex="-1" aria-disabled="true" required>
                                 <option value="" disabled {{ empty($userData['status']) ? 'selected' : '' }}>>- Pilih -</option>    
                                 <option value="Lokal" {{ $userData['status'] == 'Lokal' ? 'selected' : '' }}>Lokal</option>
                                 <option value="Expat" {{ $userData['status'] == 'Expat' ? 'selected' : '' }}>Expat</option>
@@ -50,7 +75,7 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="label-req">NO KARYAWAN</label>
-                            <input type="text" name="employee_no" id="displayemployee_no" class="form-control" value="{{ $userData['employee_no'] }}" readonly>
+                            <input type="text" name="employee_no" id="displayemployee_no" class="form-control bg-light" value="{{ $userData['employee_no'] }}" readonly>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="label-req">NAMA LENGKAP</label>
@@ -242,6 +267,7 @@
                                 <label class="label-req">UPLOAD KTP</label>
                                 <input type="file" id="fKtp" name="fKtp" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'ktp')">
                                 <div id="count_ktp" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
+
                                 <div id="view_ktp_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('ktp')" class="btn-view-center">👁️ Lihat KTP</button>
                                 </div>
@@ -298,11 +324,11 @@
                                 <div class="row">
                                     <div class="col-md-5 mb-2">
                                         <label class="label-req" style="font-size: 10px;">NAMA PASANGAN</label>
-                                        <input type="text" id="spouse_name" name="spouse_name" value="{{ $userData['spouse_name'] ?? '' }}" class="form-control form-control-sm">
+                                        <input type="text" id="spouse_name" name="spouse_name" value="{{ $userData['spouse_name'] ?? '' }}" onchange="updateCache(this)" class="form-control form-control-sm">
                                     </div>
                                     <div class="col-md-3 mb-2">
                                         <label class="label-req" style="font-size: 10px;">HUBUNGAN</label>
-                                        <select id="spouse_relation" name="spouse_relation" class="form-select form-select-sm">
+                                        <select id="spouse_relation" name="spouse_relation" class="form-select form-select-sm bg-light" style="pointer-events: none; touch-action: none;" tabindex="-1" aria-disabled="true">
                                             <option value="" disabled>- Pilih -</option>
                                             <option value="Suami" {{ ($userData['spouse_relation'] ?? '') == 'Suami' ? 'selected' : '' }}>Suami</option>
                                             <option value="Istri" {{ ($userData['spouse_relation'] ?? '') == 'Istri' ? 'selected' : '' }}>Istri</option>
@@ -310,7 +336,7 @@
                                     </div>
                                     <div class="col-md-4 mb-2">
                                         <label class="label-req" style="font-size: 10px;">TANGGAL LAHIR PASANGAN</label>
-                                        <input type="date" id="spouse_dob" name="spouse_dob" value="{{ $userData['spouse_dob'] ?? '' }}" class="form-control form-control-sm">
+                                        <input type="date" id="spouse_dob" name="spouse_dob" value="{{ $userData['spouse_dob'] ?? '' }}" onchange="updateCache(this)" class="form-control form-control-sm">
                                     </div>
                                 </div>
                             </div>
@@ -366,6 +392,14 @@ const BASE_URL = "{{ url('/') }}";
 let sessionTimeout;
 let fileURLs = {}; // Menyimpan URL file lama dari server
 
+// Inisialisasi URL yang sudah ada di database (Server-side data)
+window.fileURLs = {
+    ktp: "{{ $userData['identity_url'] ?? '' }}",
+    ijazah: "{{ $userData['education_certificate_url'] ?? '' }}",
+    bank: "{{ $userData['bank_book_url'] ?? '' }}",
+    npwp: "{{ $userData['npwp_url'] ?? '' }}",
+    kk: "{{ $userData['family_card_url'] ?? '' }}"
+};
 
 function logoutKaryawan() {
     Swal.fire({
@@ -460,12 +494,77 @@ async function loadUserData(employee_no) {
  * Fungsi Utama: Mengisi form dan mengatur logika UI Dokumen
  * @param {Object} data - Objek userData dari response server
  */
+// 1. Inisialisasi Cache Global (Ambil data awal dari server)
+const serverData = {!! $logDataJson !!};
+
+let currentGender = serverData.gender || '';
+let defaultRelation = '';
+
+if (currentGender === "Laki-laki") defaultRelation = "Istri";
+else if (currentGender === "Perempuan") defaultRelation = "Suami";
+
+let tanggunganCache = {
+    spouse_name: serverData.spouse_name || '',
+    spouse_relation: serverData.spouse_relation || defaultRelation, // Gunakan default yang dinamis
+    spouse_dob: serverData.spouse_dob || '',
+    child_1_name: serverData.child_1_name || '',
+    child_1_relation: serverData.child_1_relation || 'Anak Kandung',
+    child_1_dob: serverData.child_1_dob || '',
+    child_2_name: serverData.child_2_name || '',
+    child_2_relation: serverData.child_2_relation || 'Anak Kandung',
+    child_2_dob: serverData.child_2_dob || '',
+    child_3_name: serverData.child_3_name || '',
+    child_3_relation: serverData.child_3_relation || 'Anak Kandung',
+    child_3_dob: serverData.child_3_dob || ''
+};
+
+// 2. Fungsi untuk Update Cache setiap kali user mengetik
+function updateCache(el) {
+    tanggunganCache[el.name] = el.value;
+    console.log(`Updated Cache [${el.name}]: ${el.value}`);
+}
+
+// 3. Fungsi untuk menyimpan input yang sedang tampil sebelum HTML di-reset
+function saveCurrentInputToCache() {
+    console.log("Mengamankan data input ke cache...");
+
+    // 1. Amankan Data Pasangan (Spouse)
+    // Menggunakan querySelector agar lebih fleksibel mencari berdasarkan name
+    const sName = document.querySelector('input[name="spouse_name"]');
+    const sRel  = document.querySelector('select[name="spouse_relation"]') || document.querySelector('input[name="spouse_relation"]');
+    const sDob  = document.querySelector('input[name="spouse_dob"]');
+
+    if (sName) tanggunganCache.spouse_name = sName.value;
+    if (sRel)  tanggunganCache.spouse_relation = sRel.value;
+    if (sDob)  tanggunganCache.spouse_dob = sDob.value;
+
+    // 2. Amankan Data Anak (1-3)
+    for (let i = 1; i <= 3; i++) {
+        const nameEl = document.querySelector(`input[name="child_${i}_name"]`);
+        const relEl  = document.querySelector(`select[name="child_${i}_relation"]`);
+        const dobEl  = document.querySelector(`input[name="child_${i}_dob"]`);
+        
+        // Simpan hanya jika elemen tersebut ada di layar (sedang ditampilkan)
+        if (nameEl) {
+            tanggunganCache[`child_${i}_name`] = nameEl.value;
+        }
+        if (relEl) {
+            tanggunganCache[`child_${i}_relation`] = relEl.value;
+        }
+        if (dobEl) {
+            tanggunganCache[`child_${i}_dob`] = dobEl.value;
+        }
+    }
+
+    console.log("Data berhasil diamankan di cache:", tanggunganCache);
+}
+
 function fillFormWithData(data) {
     if (!data) return;
 
     console.log("Memulai pengisian form dengan data:", data);
 
-    // 1. MAPPING DATA TEKS, DROPDOWN, & TANGGAL
+    // 1. MAPPING DATA UTAMA
     const mapping = {
         'company_name': data.company_name,
         'status': data.status, 
@@ -491,122 +590,100 @@ function fillFormWithData(data) {
         'ptkp_status': data.ptkp_status,
         'family_status': data.family_status,
         'identity_expiry': data.identity_expiry,
-        // Mapping Keluarga (Sesuai kolom database)
         'spouse_name': data.spouse_name,
         'spouse_relation': data.spouse_relation,
         'spouse_dob': data.spouse_dob,
         'child_count': data.child_count || 0
     };
 
-    // Proses pengisian field otomatis
     Object.keys(mapping).forEach(fieldName => {
         let el = document.getElementsByName(fieldName)[0] || document.getElementById(fieldName);
         if (el) {
             let value = mapping[fieldName] || "";
-            
-            // LOGIKA TANGGAL: Input type="date" hanya menerima format YYYY-MM-DD
             if (el.type === 'date') {
-                if (value && value !== "" && value !== "0000-00-00") {
-                    // Ambil 10 karakter pertama (YYYY-MM-DD) untuk membuang jam jika ada
-                    el.value = value.substring(0, 10);
-                } else {
-                    el.value = "";
-                }
+                el.value = (value && value !== "0000-00-00") ? value.substring(0, 10) : "";
             } else {
                 el.value = value;
             }
         }
     });
 
-    // 2. LOGIKA KHUSUS: IDENTITY EXPIRY (SEUMUR HIDUP)
+    // 2. LOGIKA IDENTITY EXPIRY
     const cbForever = document.getElementById('identity_expiry_forever');
     const dateExpiry = document.getElementById('identity_expiry');
-    
     if (data.identity_expiry === 'Seumur Hidup' || !data.identity_expiry) {
         if (cbForever) cbForever.checked = true;
         if (dateExpiry) {
-            dateExpiry.value = "";
-            dateExpiry.disabled = true;
-        }
-    } else {
-        if (cbForever) cbForever.checked = false;
-        if (dateExpiry) {
-            dateExpiry.value = data.identity_expiry;
-            dateExpiry.disabled = false;
+            dateExpiry.type = "text"; dateExpiry.placeholder = "SEUMUR HIDUP";
+            dateExpiry.disabled = true; dateExpiry.style.backgroundColor = "#e9ecef";
         }
     }
 
-    // 3. LOGIKA DINAMIS: ANAK / TANGGUNGAN
-    // Memicu pembuatan baris input anak berdasarkan child_count
+    // 3. LOGIKA DINAMIS: ANAK (BAGIAN KRUSIAL)
     if (typeof generateDetailTanggungan === 'function') {
-        generateDetailTanggungan(data.child_count || 0);
+        const jmlAnak = parseInt(data.child_count) || 0;
+        const hasTanggunganEl = document.getElementById('has_children');
+        const childCountSelect = document.getElementById('child_count');
         
-        // Isi data anak setelah baris dibuat
-        for (let i = 1; i <= 3; i++) {
-            const n = document.getElementsByName(`nama_tanggungan_${i}`)[0];
-            const r = document.getElementsByName(`hubungan_tanggungan_${i}`)[0];
-            const d = document.getElementsByName(`tanggal_Lahir_tanggungan_${i}`)[0];
-            
-            if (n) n.value = data[`child_${i}_name`] || "";
-            if (r) r.value = data[`child_${i}_relation`] || "";
-            if (d) d.value = data[`child_${i}_dob`] || "";
-        }
+        // Set UI State
+        if (hasTanggunganEl) hasTanggunganEl.checked = jmlAnak > 0;
+        if (childCountSelect) childCountSelect.value = jmlAnak;
+
+        // Cegah updateStatusLogic mereset area ini saat inisialisasi
+        window.isInitializing = true; 
+
+        // Generate Baris HTML
+        generateDetailTanggungan(jmlAnak);
+
+        // Gunakan interval untuk memastikan elemen input SUDAH ada di DOM sebelum diisi
+        let attempts = 0;
+        const checkChildElements = setInterval(() => {
+            attempts++;
+            const firstChildInput = document.getElementsByName('child_1_name')[0];
+
+            if (firstChildInput || jmlAnak === 0 || attempts > 20) {
+                clearInterval(checkChildElements);
+                
+                // Isi Value Nama, Relasi, dan DOB Anak
+                for (let i = 1; i <= jmlAnak; i++) {
+                    const n = document.getElementsByName(`child_${i}_name`)[0];
+                    const r = document.getElementsByName(`child_${i}_relation`)[0];
+                    const d = document.getElementsByName(`child_${i}_dob`)[0];
+                    
+                    if (n) n.value = data[`child_${i}_name`] || "";
+                    if (r) r.value = data[`child_${i}_relation`] || "Anak Kandung";
+                    if (d) {
+                        let dobVal = data[`child_${i}_dob`] || "";
+                        if (dobVal && dobVal !== "0000-00-00") d.value = dobVal.substring(0, 10);
+                    }
+                }
+                
+                window.isInitializing = false; // Buka kunci inisialisasi
+                if (typeof updateStatusLogic === 'function') updateStatusLogic();
+                console.log("Data Anak Berhasil Diisi.");
+            }
+        }, 100);
     }
 
-    // 4. LOGIKA FILE PREVIEW (TOMBOL LIHAT)
+    // 4. LOGIKA FILE PREVIEW
     const fileKeys = { ijazah: "ijazah", ktp: "ktp", npwp: "npwp", bank: "bank", kk: "kk" };
     Object.keys(fileKeys).forEach(key => {
-        const url = (data.fileURLs && data.fileURLs[key]) ? data.fileURLs[key] : null;
+        const url = (data.fileURLs && data.fileURLs[key]) ? data.fileURLs[key] : (data[key + '_url'] || null);
         const container = document.getElementById("view_" + key + "_container");
-        
-        if (url && url.startsWith('http')) {
-            if (typeof window.fileURLs === 'undefined') window.fileURLs = {};
-            window.fileURLs[key] = url;
-            if (container) container.style.display = 'flex';
-
-            const inputId = "f" + key.charAt(0).toUpperCase() + key.slice(1);
-            const input = document.getElementById(inputId);
+        if (url && (url.startsWith('http') || url.length > 5)) {
+            if (container) container.style.setProperty('display', 'flex', 'important');
+            const input = document.getElementById("f" + key.charAt(0).toUpperCase() + key.slice(1));
             if (input) input.removeAttribute('required');
-        } else {
-            if (container) container.style.display = 'none';
         }
     });
 
-    // 5. LOGIKA NOTIFIKASI BATAS UPLOAD (0/2)
-    const statusMapping = { "ijazah": "Ijazah", "ktp": "KTP", "npwp": "NPWP", "bank": "Buku Tabungan", "kk": "KK" };
-    const counts = data.fileCounts || {};
-
-    Object.keys(statusMapping).forEach(id => {
-        const el = document.getElementById("count_" + id);
-        if (el) {
-            const label = statusMapping[id];
-            const currentCount = counts[label] || (data.fileURLs && data.fileURLs[id] ? 1 : 0);
-            el.innerHTML = `Batas Upload: ${currentCount}/2`;
-            
-            const inputId = "f" + id.charAt(0).toUpperCase() + id.slice(1);
-            const inputFile = document.getElementById(inputId);
-            
-            if (currentCount >= 2) {
-                el.style.color = "red";
-                el.style.fontWeight = "bold";
-                el.innerHTML += " (Limit Tercapai)";
-                if (inputFile) inputFile.disabled = true;
-            } else {
-                el.style.color = "#6c757d";
-                if (inputFile) inputFile.disabled = false;
-            }
-        }
-    });
-
-    // 6. FINALISASI UI
+    // 5. FINALISASI
     const displayNoK = document.getElementById('displayemployee_no');
     if (displayNoK) displayNoK.value = data.employee_no;
-
-    // Jalankan fungsi pengontrol tampilan
+    
     if (typeof toggleExpatLogic === 'function') toggleExpatLogic();
-    if (typeof updateStatusLogic === 'function') updateStatusLogic();
-
-    console.log("Form berhasil disinkronisasi.");
+    
+    console.log("Sinkronisasi Form Selesai.");
 }
 
 /**
@@ -636,8 +713,12 @@ function updateFilePreviewUI() {
     });
 }
 
+/**
+ * Membuka file di tab baru (baik file lokal maupun file dari Drive)
+ * @param {string} type - 'ktp', 'ijazah', 'bank', 'npwp', 'kk'
+ */
 function openFileInNewTab(type) {
-    // 1. Identifikasi ID input file berdasarkan tipe (fKtp, fIjazah, dll)
+    // 1. Identifikasi ID input file (fKtp, fIjazah, dll)
     const inputId = "f" + type.charAt(0).toUpperCase() + type.slice(1);
     const inputFile = document.getElementById(inputId);
     let targetUrl = null;
@@ -645,11 +726,10 @@ function openFileInNewTab(type) {
     // 2. CEK FILE BARU: Jika user baru saja memilih file di komputer mereka
     if (inputFile && inputFile.files && inputFile.files[0]) {
         const file = inputFile.files[0];
-        targetUrl = URL.createObjectURL(file); // Membuat URL sementara dari memori lokal
-        
+        targetUrl = URL.createObjectURL(file); 
         console.log("Membuka preview file baru (local):", targetUrl);
     } 
-    // 3. CEK FILE LAMA: Jika tidak ada file baru, ambil dari database
+    // 3. CEK FILE LAMA: Jika tidak ada file baru, ambil dari database (window.fileURLs)
     else if (window.fileURLs && window.fileURLs[type]) {
         targetUrl = window.fileURLs[type];
         console.log("Membuka file dari database (server):", targetUrl);
@@ -662,15 +742,42 @@ function openFileInNewTab(type) {
         // Penanganan Pop-up Blocker
         if (!newTab || newTab.closed || typeof newTab.closed == 'undefined') {
             Swal.fire('Pop-up Blocked', 'Mohon izinkan pop-up untuk melihat dokumen.', 'warning');
+            return;
         }
 
-        // Jika ini adalah local URL, bersihkan memori setelah tab terbuka
+        // Jika ini adalah local URL (blob), bersihkan memori setelah tab terbuka
         if (targetUrl.startsWith('blob:')) {
-            // Beri waktu sebentar agar browser selesai meload file sebelum link dihancurkan
+            // Beri waktu 10 detik agar browser sempat memuat data sebelum link dihancurkan
             setTimeout(() => URL.revokeObjectURL(targetUrl), 10000);
         }
     } else {
         Swal.fire('Informasi', 'Belum ada file yang dipilih atau diunggah untuk bagian ini.', 'info');
+    }
+}
+
+/**
+ * Listener saat input file berubah
+ * Mengubah UI tombol preview secara real-time
+ */
+function handleFileSelection(input, type) {
+    const viewContainer = document.getElementById("view_" + type + "_container");
+    const btnView = viewContainer ? viewContainer.querySelector('button') : null;
+    
+    if (input.files && input.files[0]) {
+        // Tampilkan kontainer (menggunakan flex untuk alignment)
+        if (viewContainer) {
+            viewContainer.style.setProperty('display', 'flex', 'important');
+        }
+        
+        if(btnView) {
+            btnView.innerHTML = '👁️ Lihat Berkas Terpilih';
+            // Perbarui label warna jika perlu (Bootstrap class)
+            btnView.className = 'btn btn-warning btn-sm text-dark fw-bold'; 
+        }
+        
+        // Memberi feedback visual pada input
+        input.style.borderColor = "#0d6efd";
+        input.style.backgroundColor = "#f0f7ff";
     }
 }
 
@@ -775,18 +882,22 @@ document.getElementById('pdmForm')?.addEventListener('submit', async function(e)
  * ============================================================
  */
 function toggleidentity_expiry() {
+    const cbForever = document.getElementById('identity_expiry_forever');
     const dateInput = document.getElementById('identity_expiry');
 
-    if (!cbForever || !dateInput) return; // Guard clause agar tidak error jika elemen tidak ada
+    if (!cbForever || !dateInput) return;
 
     if (cbForever.checked) {
-        dateInput.disabled = true;
+        dateInput.type = "text"; 
         dateInput.value = ""; 
-        dateInput.removeAttribute('required'); // Opsional: hapus required jika dicentang
-        dateInput.style.backgroundColor = "#e9ecef"; // Memberi kesan visual disabled
+        dateInput.placeholder = "SEUMUR HIDUP"; // Sekarang placeholder ini BISA muncul
+        dateInput.disabled = true;
+        dateInput.style.backgroundColor = "#e9ecef"; // Warna abu-abu (disabled)
     } else {
+        // KEMBALIKAN KE DATE: Agar muncul picker tanggal kembali
+        dateInput.type = "date";
         dateInput.disabled = false;
-        dateInput.required = true;
+        dateInput.placeholder = ""; 
         dateInput.style.backgroundColor = "#fff";
     }
 }
@@ -829,26 +940,7 @@ function validateAge() {
 //     }
 // });
 
-function handleFileSelection(input, type) {
-    const viewContainer = document.getElementById("view_" + type + "_container");
-    const btnView = viewContainer.querySelector('button');
-    
-    if (input.files && input.files[0]) {
-        const previewURL = URL.createObjectURL(input.files[0]);
-        
-        // GUNAKAN 'flex' agar justify-content: center berfungsi
-        viewContainer.style.setProperty('display', 'flex', 'important');
-        
-        if(btnView) {
-            btnView.innerHTML = '👁️ Lihat Berkas Terpilih';
-            btnView.onclick = (e) => {
-                e.preventDefault();
-                window.open(previewURL, '_blank');
-            };
-        }
-        input.style.borderColor = "#0d6efd";
-    }
-}
+
 
 /**
  * ============================================================
@@ -868,20 +960,63 @@ function startSessionTimer() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Restore Session
+    console.log("DOM fully loaded and parsed");
+
+    // 1. LOGIKA RESTORE SESSION & TAMPILAN AWAL
     if (sessionStorage.getItem('isLoggedIn') === 'true') {
-        document.getElementById('loginSection').style.display = 'none';
-        document.getElementById('formSection').style.display = 'block';
+        const loginSection = document.getElementById('loginSection');
+        const formSection = document.getElementById('formSection');
+        
+        if (loginSection) loginSection.style.display = 'none';
+        if (formSection) formSection.style.display = 'block';
         
         const savedData = JSON.parse(sessionStorage.getItem('userData'));
-        loadUserData(savedData.employee_no);
-        startSessionTimer();
+        if (savedData && savedData.employee_no) {
+            loadUserData(savedData.employee_no);
+        }
+        
+        if (typeof startSessionTimer === 'function') {
+            startSessionTimer();
+        }
     }
 
-    // Login on Enter Key
-    document.getElementById('logPass')?.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') prosesLogin();
-    });
+    // 2. LOGIKA PENGISIAN FORM (DARI SERVER DATA)
+    // Pastikan fillFormWithData jalan SEBELUM updateStatusLogic
+    if (typeof serverData !== 'undefined' && serverData) {
+        fillFormWithData(serverData);
+    }
+
+    // 3. INISIALISASI EVENT LISTENERS
+    const genderSelect = document.querySelector('select[name="gender"]');
+    const maritalStatusSelect = document.getElementById('marital_status');
+    const childCountSelect = document.getElementById('child_count');
+    const hasChildrenCheck = document.getElementById('has_children');
+
+    // Trigger updateStatusLogic pertama kali untuk mengatur UI awal
+    updateStatusLogic();
+
+    // Listener untuk Gender (Otomatisasi Suami/Istri)
+    if (genderSelect) {
+        genderSelect.addEventListener('change', function() {
+            if (typeof serverData !== 'undefined') serverData.gender = this.value; 
+            updateStatusLogic();
+        });
+    }
+
+    // Listener untuk Status Nikah
+    if (maritalStatusSelect) {
+        maritalStatusSelect.addEventListener('change', updateStatusLogic);
+    }
+
+    // Listener untuk Checkbox Anak
+    if (hasChildrenCheck) {
+        hasChildrenCheck.addEventListener('change', updateStatusLogic);
+    }
+
+    // Listener untuk Jumlah Anak
+    if (childCountSelect) {
+        childCountSelect.addEventListener('change', updateStatusLogic);
+    }
 });
 
 function handleUploadError(res) {
@@ -914,13 +1049,12 @@ function handleUploadError(res) {
  * Memastikan tampilan section dinamis sesuai pilihan user
  */
 function updateStatusLogic() {
-    // 1. Inisialisasi Elemen dengan Guard Clause (Agar tidak error jika null)
+    // 1. Inisialisasi Elemen dengan Guard Clause
     const genderEl = document.querySelector('select[name="gender"]');
     const statusSelectionEl = document.getElementById('marital_status');
     const hasTanggunganEl = document.getElementById('has_children');
     const childCountEl = document.getElementById('child_count');
     
-    // Jika elemen kunci tidak ada, hentikan fungsi agar tidak crash
     if (!genderEl || !statusSelectionEl || !hasTanggunganEl || !childCountEl) {
         console.warn("Beberapa elemen kontrol status tidak ditemukan di DOM.");
         return; 
@@ -931,7 +1065,6 @@ function updateStatusLogic() {
     const hasTanggungan = hasTanggunganEl.checked;
     const jmlTanggungan = parseInt(childCountEl.value) || 0;
     
-    // Ambil referensi container/area
     const familySection = document.getElementById('familySection');
     const tanggunganSection = document.getElementById('tanggungan_section');
     const tanggunganCheckboxContainer = document.getElementById('tanggungan_checkbox_container');
@@ -960,24 +1093,46 @@ function updateStatusLogic() {
         tanggunganSection.style.display = (isMarried || hasTanggungan) ? 'block' : 'none';
     }
 
-    // --- B. LOGIKA DATA PASANGAN ---
+    // --- B. LOGIKA DATA PASANGAN (DIPERBAIKI) ---
     if (familySection) {
         if (isMarried) {
             familySection.style.display = 'block';
+            
+            // Set Required
             if (namaPasangan) namaPasangan.required = true;
             if (hubPasangan) hubPasangan.required = true;
             if (tglPasangan) tglPasangan.required = true;
+
+            // RESTORE DATA DARI CACHE (Agar tidak kosong saat balik ke Menikah)
+            if (namaPasangan && !namaPasangan.value) {
+                namaPasangan.value = tanggunganCache.spouse_name || "";
+            }
+            if (tglPasangan && !tglPasangan.value) {
+                tglPasangan.value = tanggunganCache.spouse_dob || "";
+            }
 
             // Otomatisasi Hubungan Pasangan
             if (hubPasangan) {
                 if (gender === "Laki-laki") hubPasangan.value = "Istri";
                 else if (gender === "Perempuan") hubPasangan.value = "Suami";
+                // Simpan ke cache juga
+                tanggunganCache.spouse_relation = hubPasangan.value;
             }
         } else {
+            // SEBELUM SEMBUNYI: Amankan data yang ada ke cache
+            if (namaPasangan && namaPasangan.value !== "") {
+                tanggunganCache.spouse_name = namaPasangan.value;
+            }
+            if (tglPasangan && tglPasangan.value !== "") {
+                tanggunganCache.spouse_dob = tglPasangan.value;
+            }
+
             familySection.style.display = 'none';
-            if (namaPasangan) { namaPasangan.required = false; namaPasangan.value = ""; }
-            if (hubPasangan) { hubPasangan.required = false; hubPasangan.value = ""; }
-            if (tglPasangan) { tglPasangan.required = false; tglPasangan.value = ""; }
+            
+            // JANGAN gunakan namaPasangan.value = "" karena akan menghapus data selamanya
+            if (namaPasangan) namaPasangan.required = false;
+            if (hubPasangan) hubPasangan.required = false;
+            if (tglPasangan) tglPasangan.required = false;
         }
     }
 
@@ -986,18 +1141,23 @@ function updateStatusLogic() {
         if (hasTanggungan) {
             anakArea.style.display = 'block';
             
-            // Generate input anak jika jumlah berubah
             if (typeof generateDetailTanggungan === 'function') {
-                if (jmlTanggungan !== (window.lastTanggunganCount || 0)) {
+                // Gunakan flag window.isInitializing agar tidak render ulang saat startup
+                if (!window.isInitializing && jmlTanggungan !== (window.lastTanggunganCount)) {
                     generateDetailTanggungan(jmlTanggungan);
                     window.lastTanggunganCount = jmlTanggungan; 
                 }
             }
         } else {
+            // Amankan data anak ke cache sebelum area dibersihkan
+            if (typeof saveCurrentInputToCache === 'function') {
+                saveCurrentInputToCache();
+            }
+            
             anakArea.style.display = 'none';
             if (detailArea) detailArea.innerHTML = ""; 
             window.lastTanggunganCount = -1; 
-            childCountEl.value = "0";
+            // childCountEl.value = "0"; // Opsional: tetap biarkan jumlahnya di select
         }
     }
 
@@ -1007,7 +1167,6 @@ function updateStatusLogic() {
             statusPajakInput.value = "-";
         } 
         else if (gender === "Perempuan") {
-            // Sesuai aturan pajak Indonesia, istri biasanya TK/0 kecuali ada surat pisah harta
             statusPajakInput.value = "TK/0";
         } 
         else {
@@ -1017,7 +1176,7 @@ function updateStatusLogic() {
         }
     }
 
-    // --- E. LOGIKA STATUS KELUARGA (Internal Family Status) ---
+    // --- E. LOGIKA STATUS KELUARGA ---
     if (familyStatusInput) {
         if (statusSelection === "") {
             familyStatusInput.value = "-";
@@ -1029,48 +1188,49 @@ function updateStatusLogic() {
     }
 }
 
+    let existingChildren = [];
+
     function generateDetailTanggungan(jml) {
         const container = document.getElementById('detail_tanggungan_area');
-        container.innerHTML = "";
+        if (!container) return;
         
-        // Limit maksimal 3 untuk input detail sesuai aturan pajak
+        // Simpan data lama ke cache sebelum container dikosongkan
+        saveCurrentInputToCache();
+        
+        container.innerHTML = "";
         const limit = Math.min(jml, 3); 
         
         for(let i = 1; i <= limit; i++) {
-            // Ambil data anak jika sudah ada di database (indeks array mulai dari 0)
-            const childData = existingChildren[i-1] || {};
-            
+            // Ambil data dari cache agar saat pindah jumlah anak, data lama tidak hilang
+            const valName = tanggunganCache[`child_${i}_name`] || "";
+            const valRel = tanggunganCache[`child_${i}_relation`] || "Anak Kandung";
+            const valDob = tanggunganCache[`child_${i}_dob`] || "";
+
             container.innerHTML += `
                 <div class="tanggungan-item mb-3 p-2" style="border: 1px dashed #ced4da; border-radius: 5px; background: #fff;">
                     <div class="row">
                         <div class="col-md-6 mb-2">
-                            <label class="label-req" style="font-size: 10px; color: #0d6efd; font-weight:700;">NAMA TANGGUNGAN ${i}</label>
-                            <input type="text" name="nama_tanggungan_${i}" 
-                                value="${childData.name || ''}" 
-                                class="form-control form-control-sm" placeholder="Nama Lengkap Anak" required>
+                            <label class="label-req" style="font-size: 10px; color: #0d6efd; font-weight:700;">NAMA ANAK ${i}</label>
+                            <input type="text" name="child_${i}_name" class="form-control form-control-sm" 
+                                placeholder="Nama Lengkap Anak" value="${valName}" 
+                                onchange="updateCache(this)" required>
                         </div>
                         <div class="col-md-3 mb-2">
                             <label style="font-size: 10px;">HUBUNGAN</label>
-                            <select name="hubungan_tanggungan_${i}" class="form-select form-select-sm">
-                                <option value="Anak Kandung" ${childData.relation === 'Anak Kandung' ? 'selected' : ''}>Anak Kandung</option>
-                                <option value="Anak Angkat" ${childData.relation === 'Anak Angkat' ? 'selected' : ''}>Anak Angkat</option>
+                            <select name="child_${i}_relation" class="form-select form-select-sm" onchange="updateCache(this)">
+                                <option value="Anak Kandung" ${valRel === 'Anak Kandung' ? 'selected' : ''}>Anak Kandung</option>
+                                <option value="Anak Angkat" ${valRel === 'Anak Angkat' ? 'selected' : ''}>Anak Angkat</option>
                             </select>
                         </div>
                         <div class="col-md-3 mb-2">
                             <label class="label-req" style="font-size: 10px;">TGL LAHIR</label>
-                            <input type="date" name="tanggal_Lahir_tanggungan_${i}" 
-                                value="${childData.birth_date || ''}" 
-                                class="form-control form-control-sm" required>
+                            <input type="date" name="child_${i}_dob" class="form-control form-control-sm" 
+                                value="${valDob}" onchange="updateCache(this)" required>
                         </div>
                     </div>
                 </div>`;
         }
     }
-
-    // Pastikan fungsi dipanggil saat halaman pertama kali dimuat
-    document.addEventListener('DOMContentLoaded', function() {
-        updateStatusLogic();
-    });
 
     // Fungsi untuk membatasi hanya input angka
     function hanyaAngka(evt) {
