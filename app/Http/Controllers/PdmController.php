@@ -67,7 +67,7 @@ class PdmController extends Controller
             $userData[$log->field_name] = $log->new_value;
         }
 
-        // Logika sinkronisasi data anak
+        // Sinkronisasi data anak
         $maxChildFound = 0;
         for ($i = 1; $i <= 3; $i++) {
             if (!empty($userData["child_{$i}_name"])) {
@@ -79,7 +79,7 @@ class PdmController extends Controller
         }
         $userData['has_children'] = (($userData['child_count'] ?? 0) > 0);
 
-        // Format tanggal
+        // Format tanggal agar sesuai input date
         $dateFields = ['dob', 'spouse_dob', 'child_1_dob', 'child_2_dob', 'child_3_dob', 'identity_expiry'];
         foreach ($dateFields as $df) {
             if (isset($userData[$df]) && !empty($userData[$df]) && $userData[$df] !== 'Seumur Hidup') {
@@ -89,13 +89,45 @@ class PdmController extends Controller
             }
         }
 
+        // INTEGRASI GOOGLE DRIVE: Ambil jumlah file
+        $gasUrl = "https://script.google.com/macros/s/AKfycbzOgw5Z5b3Imdxp8p1Y_yn0czeOchCF4ngo8MytYSGAyangWAKQa2Q9ugNsImzw6aFC/exec";
+        
+        // Key disesuaikan dengan kebutuhan mapping JavaScript di View
+        $uploadCounts = [
+            'ktp'    => 0, 
+            'ijazah' => 0, 
+            'bank'   => 0, 
+            'npwp'   => 0, 
+            'kk'     => 0
+        ];
+
+        try {
+            $response = Http::timeout(10)->get($gasUrl, [
+                'action' => 'getCounts',
+                'noKaryawan' => $user->employee_no
+            ]);
+            
+            if ($response->successful()) {
+                $data = $response->json();
+                if (isset($data['counts'])) {
+                    // Mapping dari bahasa manusia (GAS) ke key sistem (JS)
+                    $gasCounts = $data['counts'];
+                    $uploadCounts['ktp']    = $gasCounts['ktp'] ?? 0;
+                    $uploadCounts['ijazah'] = $gasCounts['ijazah'] ?? 0;
+                    $uploadCounts['bank']   = $gasCounts['bank'] ?? 0;
+                    $uploadCounts['npwp']   = $gasCounts['npwp'] ?? 0;
+                    $uploadCounts['kk']     = $gasCounts['kk'] ?? 0;
+                }
+            }
+        } catch (\Exception $e) {}
+
         $isPending = $pendingLogs->isNotEmpty();
         $logDataJson = json_encode($userData);
         
-        return view('employees.pdm', compact('userData', 'isPending', 'master', 'logDataJson'));
+        return view('employees.pdm', compact('userData', 'isPending', 'master', 'logDataJson', 'uploadCounts'));
     }
 
-    // --- 3. USER SIDE: SUBMIT CHANGES (INCLUDING GOOGLE DRIVE) ---
+    // --- 3. USER SIDE: SUBMIT CHANGES ---
     public function update(Request $request)
     {
         try {
@@ -112,11 +144,21 @@ class PdmController extends Controller
             $employee_name = $employee->employee_name;
             $changes = [];
 
-            // 1. Filter input text biasa
-            $excludedFields = [
-                '_token', 'fKtp', 'fIjazah', 'fBank', 'fNpwp', 'fKk', 
-                'pernyataan_benar', 'identity_expiry_forever', 'has_children'
+            // 1. Mapping File: SINKRON DENGAN HTML NAME & ID BARU
+            $fileMapping = [
+                'education_certificate_url' => ['key' => 'fileIjazah', 'col' => 'education_certificate_url'],
+                'bank_book_url'             => ['key' => 'fileBank',   'col' => 'bank_book_url'],
+                'npwp_url'                  => ['key' => 'fileNpwp',   'col' => 'npwp_url'],
+                'identity_url'              => ['key' => 'fileKtp',    'col' => 'identity_url'],
+                'family_card_url'           => ['key' => 'fileKk',     'col' => 'family_card_url'],
             ];
+
+            // Filter input teks biasa
+            $excludedFields = array_merge(
+                ['_token', 'pernyataan_benar', 'identity_expiry_forever', 'has_children'],
+                array_keys($fileMapping)
+            );
+            
             $fields = $request->except($excludedFields);
 
             if ($request->identity_expiry_forever === 'on' || $request->has('identity_expiry_forever')) {
@@ -150,14 +192,6 @@ class PdmController extends Controller
                 'fileIjazah' => null, 'fileBank' => null, 'fileNpwp' => null, 'fileKtp' => null, 'fileKk' => null
             ];
 
-            $fileMapping = [
-                'fIjazah' => ['key' => 'fileIjazah', 'col' => 'education_certificate_url'],
-                'fBank'   => ['key' => 'fileBank',   'col' => 'bank_book_url'],
-                'fNpwp'   => ['key' => 'fileNpwp',   'col' => 'npwp_url'],
-                'fKtp'    => ['key' => 'fKtp',       'col' => 'identity_url'],
-                'fKk'     => ['key' => 'fileKk',     'col' => 'family_card_url'],
-            ];
-
             $hasFiles = false;
             foreach ($fileMapping as $inputName => $map) {
                 if ($request->hasFile($inputName)) {
@@ -171,6 +205,7 @@ class PdmController extends Controller
                 $response = Http::timeout(60)->post($gasUrl, $googlePayload);
                 if ($response->successful() && $response->json('success')) {
                     $urls = $response->json('data');
+                    // Simpan URL baru ke perubahan logs
                     if (!empty($urls['urlIjazah'])) $changes['education_certificate_url'] = ['old' => $employee->education_certificate_url, 'new' => $urls['urlIjazah']];
                     if (!empty($urls['urlBank']))   $changes['bank_book_url'] = ['old' => $employee->bank_book_url, 'new' => $urls['urlBank']];
                     if (!empty($urls['urlNpwp']))   $changes['npwp_url'] = ['old' => $employee->npwp_url, 'new' => $urls['urlNpwp']];
@@ -185,6 +220,7 @@ class PdmController extends Controller
                 return response()->json(['success' => false, 'message' => 'Tidak ada perubahan data.']);
             }
 
+            // 3. Simpan ke Logs
             $requestId = DB::table('employee_update_requests')->insertGetId([
                 'employee_no' => $employee_no,
                 'approval_status' => 'Pending',

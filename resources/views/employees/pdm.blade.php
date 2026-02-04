@@ -208,7 +208,7 @@
                                     @endforeach
                                 </select>
                                 <label class="label-req mt-3">UPLOAD IJAZAH</label>
-                                <input type="file" id="fIjazah" name="fIjazah" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'ijazah')">
+                                <input type="file" id="education_certificate_url" name="education_certificate_url" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'ijazah')">
                                 <div id="count_ijazah" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
                                 <div id="view_ijazah_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('ijazah')" class="btn-view-center">👁️ Lihat Ijazah</button>
@@ -222,7 +222,7 @@
                                 <label class="label-req">NO REKENING (13 DIGIT)</label>
                                 <input type="text" name="bank_account_number" value="{{ $userData['bank_account_number'] ?? '' }}" class="form-control" maxlength="13" onkeypress="return hanyaAngka(event)" oninput="checkExactLength(this, 13, 'No Rekening Mandiri'); cleanNonNumber(this)" placeholder="13 digit angka" required>
                                 <label class="label-req mt-3">UPLOAD BUKU TABUNGAN</label>
-                                <input type="file" id="fBank" name="fBank" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'bank')">
+                                <input type="file" id="bank_book_url" name="bank_book_url" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'bank')">
                                 <div id="count_bank" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
                                 <div id="view_bank_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('bank')" class="btn-view-center">👁️ Lihat Tabungan</button>
@@ -236,7 +236,7 @@
                                 <label class="label-req">NO NPWP (16 DIGIT)</label>
                                 <input type="text" name="npwp_number" value="{{ $userData['npwp_number'] ?? '' }}" class="form-control" maxlength="16" onkeypress="return hanyaAngka(event)" oninput="checkExactLength(this, 16, 'No NPWP'); cleanNonNumber(this)" placeholder="16 digit angka" required>
                                 <label class="label-req mt-3">UPLOAD KARTU NPWP</label>
-                                <input type="file" id="fNpwp" name="fNpwp" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'npwp')">
+                                <input type="file" id="npwp_url" name="npwp_url" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'npwp')">
                                 <div id="count_npwp" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
                                 <div id="view_npwp_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('npwp')" class="btn-view-center">👁️ Lihat NPWP</button>
@@ -265,9 +265,8 @@
                                 </div>
 
                                 <label class="label-req">UPLOAD KTP</label>
-                                <input type="file" id="fKtp" name="fKtp" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'ktp')">
+                                <input type="file" id="identity_url" name="identity_url" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'ktp')">
                                 <div id="count_ktp" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
-
                                 <div id="view_ktp_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('ktp')" class="btn-view-center">👁️ Lihat KTP</button>
                                 </div>
@@ -281,7 +280,7 @@
                                 <input type="text" name="family_card_number" value="{{ $userData['family_card_number'] ?? '' }}" class="form-control" maxlength="16" onkeypress="return hanyaAngka(event)" oninput="checkExactLength(this, 16, 'No KK'); cleanNonNumber(this)" placeholder="16 digit angka" required>
                                 <div class="d-none d-md-block" style="height: 48px;"></div>
                                 <label class="label-req">UPLOAD KK</label>
-                                <input type="file" id="fKk" name="fKk" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'kk')">
+                                <input type="file" id="family_card_url" name="family_card_url" class="form-control" accept=".pdf,image/*" onchange="handleFileSelection(this, 'kk')">
                                 <div id="count_kk" style="font-size: 11px; color: #6c757d; margin-top: 4px;">Batas Upload: 0/2</div>
                                 <div id="view_kk_container" class="view-container">
                                     <button type="button" onclick="openFileInNewTab('kk')" class="btn-view-center">👁️ Lihat KK</button>
@@ -388,6 +387,8 @@ const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
 
 // Penanganan URL agar fleksibel (Absolut)
 const BASE_URL = "{{ url('/') }}";
+
+const counts = @json($uploadCounts);
 
 let sessionTimeout;
 let fileURLs = {}; // Menyimpan URL file lama dari server
@@ -718,7 +719,7 @@ function updateFilePreviewUI() {
  * @param {string} type - 'ktp', 'ijazah', 'bank', 'npwp', 'kk'
  */
 function openFileInNewTab(type) {
-    // 1. Identifikasi ID input file (fKtp, fIjazah, dll)
+    // 1. Identifikasi ID input file (identity_url, education_certificate_url, dll)
     const inputId = "f" + type.charAt(0).toUpperCase() + type.slice(1);
     const inputFile = document.getElementById(inputId);
     let targetUrl = null;
@@ -771,8 +772,6 @@ function handleFileSelection(input, type) {
         
         if(btnView) {
             btnView.innerHTML = '👁️ Lihat Berkas Terpilih';
-            // Perbarui label warna jika perlu (Bootstrap class)
-            btnView.className = 'btn btn-warning btn-sm text-dark fw-bold'; 
         }
         
         // Memberi feedback visual pada input
@@ -1017,6 +1016,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (childCountSelect) {
         childCountSelect.addEventListener('change', updateStatusLogic);
     }
+
+    updateUploadCountsUI();
 });
 
 function handleUploadError(res) {
@@ -1044,10 +1045,6 @@ function handleUploadError(res) {
     /**
      * 3. LOGIKA FORM DINAMIS (PASANGAN & ANAK)
      */
-    /**
- * FUNGSI LOGIKA STATUS KELUARGA & PAJAK
- * Memastikan tampilan section dinamis sesuai pilihan user
- */
 function updateStatusLogic() {
     // 1. Inisialisasi Elemen dengan Guard Clause
     const genderEl = document.querySelector('select[name="gender"]');
@@ -1258,6 +1255,42 @@ function updateStatusLogic() {
             checkExactLength(el);
         }
     }
+
+function updateUploadCountsUI() {
+    console.log("Memperbarui UI Batas Upload...", counts);
+    
+    const statusMapping = {
+        ktp: "ktp",
+        ijazah: "ijazah",
+        bank: "bank", 
+        npwp: "npwp",
+        kk: "kk"
+    };
+
+    Object.keys(statusMapping).forEach(id => {
+        const el = document.getElementById("count_" + id);
+        if (el) {
+            const label = statusMapping[id];
+            // Pastikan variabel 'counts' global sudah terisi dari @json($uploadCounts)
+            const currentCount = (typeof counts !== 'undefined' && counts[label]) ? counts[label] : 0;
+            
+            el.innerHTML = `Batas Upload: ${currentCount}/2`;
+            
+            if (currentCount >= 2) {
+                el.style.color = "red";
+                el.style.fontWeight = "bold";
+                el.innerHTML += " (Limit Tercapai)";
+                
+                const inputId = "f" + id.charAt(0).toUpperCase() + id.slice(1);
+                const inputEl = document.getElementById(inputId);
+                if(inputEl) {
+                    inputEl.disabled = true;
+                    inputEl.style.backgroundColor = "#e9ecef";
+                }
+            }
+        }
+    });
+}
 </script>
 </body>
 </html>
