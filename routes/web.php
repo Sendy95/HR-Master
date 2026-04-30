@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PdmController;
 
-// --- 1. GUEST ROUTES ---
+// --- GUEST ROUTES (Belum Login) ---
 Route::middleware('guest')->group(function () {
     Route::get('/', function () { 
         return redirect()->route('login'); 
@@ -11,38 +11,40 @@ Route::middleware('guest')->group(function () {
     
     Route::get('/login', [PdmController::class, 'showLoginForm'])->name('login');
     Route::post('/login', [PdmController::class, 'login'])->name('login.proses');
+    Route::post('/get-user-email', [PdmController::class, 'getUserEmail'])->name('user.get-email');
 });
 
-// --- 2. PROTECTED ROUTES (Harus Login) ---
+// --- AUTH ROUTES (Sudah Login) ---
 Route::middleware(['auth'])->group(function () {
     
-    // Redirect dashboard langsung ke halaman PDM
-    Route::get('/dashboard', function () { 
-        return redirect()->route('pdm.index'); 
-    });
-
-    // --- HALAMAN USER / KARYAWAN ---
-    // URL utama PDM (Tampilan & Form)
-    Route::get('/pdm', [PdmController::class, 'edit'])->name('pdm.index');
-    
-    // Proses Simpan Perubahan (POST)
-    Route::post('/pdm', [PdmController::class, 'update'])->name('pdm.update');
-    
-    // API untuk ambil data JSON jika dibutuhkan oleh JavaScript
-    Route::get('/pdm/get-data/{employee_no}', [PdmController::class, 'getData'])->name('pdm.get-data');
-    
-    // Logout
+    // Logout & Security Essentials
     Route::get('/logout', [PdmController::class, 'logout'])->name('logout'); 
+    Route::post('/pdm/password-first-update', [PdmController::class, 'updatePasswordFirst'])->name('password.update.first');
+    Route::post('/otp/resend', [PdmController::class, 'resendOtp'])->name('otp.resend');
 
-    // --- 3. HR ADMIN ROUTES (Prefix: admin) ---
-    Route::prefix('admin')->name('admin.')->group(function () {
-        // Halaman Daftar Pengajuan (Header: employee_update_requests)
-        Route::get('/pdm-approval', [PdmController::class, 'pendingList'])->name('pdm.index');
+    // --- PROTECTED ROUTES (Harus Lewat Force Password Change) ---
+    Route::middleware(['force.password'])->group(function () {
         
-        // Aksi Approve per Tiket (Bulk Update berdasarkan Request ID)
-        Route::post('/pdm-approve/{id}', [PdmController::class, 'approveBulk'])->name('pdm.approve');
+        Route::get('/dashboard', function () { 
+            return redirect()->route('pdm.index'); 
+        })->name('dashboard');
+
+        // Personal Data Management (User Side)
+        Route::prefix('pdm')->name('pdm.')->group(function () {
+            Route::get('/', [PdmController::class, 'edit'])->name('index');
+            Route::post('/', [PdmController::class, 'update'])->name('update');
+            
+            // Route yang tadi menyebabkan error RouteNotFoundException
+            Route::get('/get-data', [PdmController::class, 'getData'])->name('get-data');
+            
+            Route::get('/view-document/{type}', [PdmController::class, 'viewDocument'])->name('view-document');
+        });
+
+        // --- ADMIN ROUTES ---
+        Route::prefix('admin')->name('admin.')->group(function () {
+            Route::get('/employee-report', [PdmController::class, 'showReport'])->name('report');
+            Route::get('/export-excel', [PdmController::class, 'export'])->name('export.excel');
+        });
         
-        // Aksi Reject per Tiket
-        Route::post('/pdm-reject/{id}', [PdmController::class, 'rejectRequest'])->name('pdm.reject');
     });
 });

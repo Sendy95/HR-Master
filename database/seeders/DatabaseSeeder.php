@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+// Gunakan WithoutModelEvents jika Anda ingin proses seeding lebih cepat tanpa memicu Event Model
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,11 +15,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        // Memanggil seeder spesifik secara berurutan
+        $this->call([
+            UserSeeder::class,
+            EmployeeSeeder::class,
         ]);
+        
+        // Catatan: UserSeeder harus di atas EmployeeSeeder 
+        // agar ID user tersedia saat data employee diinput.
     }
 }

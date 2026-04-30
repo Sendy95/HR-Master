@@ -62,19 +62,13 @@ class Employee extends Model
         'fixed_allowance',
         'employment_status',
         'bank_account_number',
-        'bank_book_url',
         'npwp_number',
-        'npwp_url',
 
         // --- Pendidikan & Dokumen ---
         'education_level',
-        'education_certificate_url',
-        'folder_link',
         'identity_number',
-        'identity_expiry', // Tetap string agar bisa "Seumur Hidup"
-        'identity_url',
+        'identity_expiry', 
         'family_card_number',
-        'family_card_url',
 
         // --- Dokumen Expat ---
         'kitas_number',
@@ -130,13 +124,9 @@ class Employee extends Model
         'separation_reason',
     ];
 
-    /**
-     * Casts kolom ke tipe data tertentu
-     */
     protected $casts = [
         'dob' => 'date',
         'doj' => 'date',
-        // 'identity_expiry' dilepas dari date cast agar support string "Seumur Hidup"
         'spouse_dob' => 'date',
         'child_1_dob' => 'date',
         'child_2_dob' => 'date',
@@ -157,6 +147,15 @@ class Employee extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id', 'id');
+    }
+
+    /**
+     * RELASI KE DOKUMEN (BARU)
+     * Memungkinkan memanggil $employee->documents
+     */
+    public function documents()
+    {
+        return $this->hasMany(EmployeeDocument::class, 'employee_id', 'id');
     }
 
     /**

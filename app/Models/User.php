@@ -12,7 +12,10 @@ class User extends Authenticatable
 
     protected $fillable = [
         'employee_no',
+        'name',                // Tambahkan ini agar tidak blank saat login
+        'email',               // Tambahkan ini agar tidak blank saat login
         'password',
+        'password_changed_at', // Tambahkan ini untuk fitur paksa ganti password
         'role',
         'is_active',
         'otp_code',
@@ -27,16 +30,16 @@ class User extends Authenticatable
     protected $casts = [
         'password' => 'hashed',
         'otp_expires_at' => 'datetime',
+        'password_changed_at' => 'datetime', // Tambahkan cast agar mudah dimanipulasi Carbon
         'is_active' => 'boolean',
     ];
 
     /**
      * Relasi ke profil Employee
-     * Masukkan fungsi ini di DALAM class
      */
     public function employee()
     {
-        // Gunakan employee_no jika itu adalah kunci penyambungnya
+        // Menyambungkan tabel users ke tabel employees melalui employee_no
         return $this->hasOne(Employee::class, 'employee_no', 'employee_no');
     }
-} 
+}

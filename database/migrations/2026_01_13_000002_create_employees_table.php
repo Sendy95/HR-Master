@@ -18,10 +18,10 @@ return new class extends Migration
             // --- IDENTITAS UTAMA & PERUSAHAAN ---
             $table->timestamp('entry_timestamp')->useCurrent();
             $table->string('company_name', 50)->nullable(); 
-            $table->enum('status', ['Lokal', 'Expat']);
+            $table->enum('status', ['Local', 'Expat']);
             $table->string('employee_no', 10)->unique(); // No Karyawan
             $table->string('employee_name', 100);
-            $table->enum('gender', ['Laki-laki', 'Perempuan'])->nullable();
+            $table->enum('gender', ['Male', 'Female'])->nullable();
             
             // --- STRUKTUR ORGANISASI & KLASIFIKASI ---
             $table->string('department', 50)->nullable();
@@ -64,21 +64,15 @@ return new class extends Migration
             $table->decimal('fixed_allowance', 15, 2)->default(0);
             $table->string('employment_status', 50)->nullable(); // Tetap, Kontrak, Probasi
             $table->string('bank_account_number', 50)->nullable();
-            $table->text('bank_book_url')->nullable();
             $table->string('npwp_number', 50)->nullable();
-            $table->text('npwp_url')->nullable();
 
             // --- PENDIDIKAN & DOKUMEN ---
             $table->string('education_level', 50)->nullable();
-            $table->text('education_certificate_url')->nullable();
-            $table->text('folder_link')->nullable();
 
             // --- IDENTITAS (KTP / PASSPORT) ---
             $table->string('identity_number', 50)->nullable();
             $table->string('identity_expiry', 50)->nullable();
-            $table->text('identity_url')->nullable();
             $table->string('family_card_number', 50)->nullable(); 
-            $table->text('family_card_url')->nullable();
 
             // --- DOKUMEN EXPAT (KITAS & IMTA) ---
             $table->string('kitas_number', 50)->nullable();
